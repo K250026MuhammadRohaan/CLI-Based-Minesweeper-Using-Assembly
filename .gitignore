@@ -1,0 +1,8 @@
+besttime.dat
+Debug/
+Release/
+.vs/
+*.obj
+*.exe
+*.ilk
+*.pdb
