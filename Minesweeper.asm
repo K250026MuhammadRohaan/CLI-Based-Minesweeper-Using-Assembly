@@ -161,6 +161,71 @@ RANA_D6_DONE    = 0
 ; ############################################################################
 ; >>>>>>>>>>>>>>>>>>>>  ROHAAN ZONE START  <<<<<<<<<<<<<<<<<<<<
 
+; ---------------------------------------------------------------------------
+;  MUHAMMAD ROHAAN - DAY 1  (SetDifficulty, InitGame)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; SetDifficulty: copies width, height and mines for the chosen difficulty
+; ---------------------------------------------------------------------------
+SetDifficulty PROC
+    pushad
+    mov eax, difficulty
+    mov ebx, widthTable[eax*4]
+    mov boardW, ebx
+    mov ecx, heightTable[eax*4]
+    mov boardH, ecx
+    imul ebx, ecx               ; boardSize = width * height
+    mov boardSize, ebx
+    mov ebx, mineTable[eax*4]
+    mov mineCount, ebx
+    popad
+    ret
+SetDifficulty ENDP
+
+; ---------------------------------------------------------------------------
+; InitGame: prepares a fresh game (clears arrays, resets state, places mines)
+; ---------------------------------------------------------------------------
+InitGame PROC
+    pushad
+    call SetDifficulty
+
+    ; clear both arrays
+    mov esi, 0
+    mov ecx, MAX_CELLS
+clearLoop:
+    mov board[esi], 0
+    mov counts[esi], 0
+    inc esi
+    loop clearLoop
+
+    ; reset the game state
+    mov flagsPlaced, 0
+    mov revealedCount, 0
+    mov gameOver, 0
+    mov gameWon, 0
+    mov firstMove, 1
+    mov timerRunning, 0
+    mov startTime, 0
+    mov elapsedSec, 0
+    mov newRecord, 0
+
+    ; put the cursor in the middle of the board
+    mov eax, boardH
+    shr eax, 1
+    mov cursorRow, eax
+    mov eax, boardW
+    shr eax, 1
+    mov cursorCol, eax
+
+    call PlaceMines
+    call CalcCounts
+    popad
+    ret
+InitGame ENDP
+
+ROHAAN_D1_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  ROHAAN ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
