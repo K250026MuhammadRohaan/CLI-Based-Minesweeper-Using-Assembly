@@ -226,6 +226,49 @@ InitGame ENDP
 
 ROHAAN_D1_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  MUHAMMAD ROHAAN - DAY 2  (PlaceMines, RelocateMine)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; PlaceMines: puts mineCount mines on random, different cells
+; ---------------------------------------------------------------------------
+PlaceMines PROC
+    pushad
+    mov ecx, mineCount
+placeLoop:
+    mov eax, boardSize
+    call RandomRange            ; EAX = random index 0..boardSize-1
+    test BYTE PTR board[eax], CELL_MINE
+    jnz placeLoop               ; already a mine here, pick again
+    or BYTE PTR board[eax], CELL_MINE
+    loop placeLoop
+    popad
+    ret
+PlaceMines ENDP
+
+; ---------------------------------------------------------------------------
+; RelocateMine: ESI = index of a mine. Moves it to a random empty cell
+;               and recalculates the counts. (Used if the first pick is a mine)
+; ---------------------------------------------------------------------------
+RelocateMine PROC
+    pushad
+    xor BYTE PTR board[esi], CELL_MINE      ; remove the mine from this cell
+findNewSpot:
+    mov eax, boardSize
+    call RandomRange
+    cmp eax, esi
+    je findNewSpot                          ; not the same cell
+    test BYTE PTR board[eax], CELL_MINE
+    jnz findNewSpot                         ; not a cell that already has a mine
+    or BYTE PTR board[eax], CELL_MINE
+    call CalcCounts
+    popad
+    ret
+RelocateMine ENDP
+
+ROHAAN_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  ROHAAN ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
