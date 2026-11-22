@@ -237,6 +237,63 @@ MainMenu ENDP
 
 SARIM_D1_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  SARIM RAZA ANSARI - DAY 2  (DifficultyMenu)
+; ---------------------------------------------------------------------------
+.data
+strChoose       BYTE "  Choose a difficulty:",0
+strOptEasy      BYTE "    1. Easy   (9 x 9,   10 mines)",0
+strOptMedium    BYTE "    2. Medium (16 x 16, 40 mines)",0
+strOptHard      BYTE "    3. Hard   (30 x 16, 99 mines)",0
+strEscBack      BYTE "    Esc. Back",0
+.code
+
+; ---------------------------------------------------------------------------
+; DifficultyMenu: lets the player pick Easy / Medium / Hard, then plays
+; ---------------------------------------------------------------------------
+DifficultyMenu PROC
+    call ClearScreen
+    GotoRC 3, 0
+    ShowText strChoose, 11
+    call Crlf
+    call Crlf
+    ShowText strOptEasy, 10
+    call Crlf
+    ShowText strOptMedium, 14
+    call Crlf
+    ShowText strOptHard, 12
+    call Crlf
+    ShowText strEscBack, 7
+    call Crlf
+
+readDiff:
+    call ReadChar
+    cmp al, '1'
+    je pickEasy
+    cmp al, '2'
+    je pickMedium
+    cmp al, '3'
+    je pickHard
+    cmp al, 27                  ; Esc key
+    je diffBack
+    jmp readDiff
+
+pickEasy:
+    mov difficulty, 0
+    jmp startIt
+pickMedium:
+    mov difficulty, 1
+    jmp startIt
+pickHard:
+    mov difficulty, 2
+startIt:
+    call PlayGame
+diffBack:
+    ret
+DifficultyMenu ENDP
+
+SARIM_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  SARIM ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
