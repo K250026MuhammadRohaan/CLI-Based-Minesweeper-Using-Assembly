@@ -269,6 +269,93 @@ RelocateMine ENDP
 
 ROHAAN_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  MUHAMMAD ROHAAN - DAY 3  (GetNeighbours, CalcCounts)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; GetNeighbours: EAX = cell index.
+;   Fills nbrList with the indexes of all valid neighbours (edges handled)
+;   and nbrCount with how many there are (3 to 8).
+; ---------------------------------------------------------------------------
+GetNeighbours PROC
+    pushad
+    mov nbrCount, 0
+    xor edx, edx
+    div boardW                  ; EAX = row, EDX = column
+    mov esi, eax                ; ESI = row of the centre cell
+    mov edi, edx                ; EDI = column of the centre cell
+
+    mov ebx, -1                 ; EBX = row offset  (-1, 0, +1)
+rowStep:
+    mov ecx, -1                 ; ECX = column offset (-1, 0, +1)
+colStep:
+    mov eax, ebx
+    or eax, ecx
+    jz nextCol                  ; offset (0,0) is the cell itself, skip it
+
+    mov eax, esi
+    add eax, ebx                ; EAX = neighbour row
+    cmp eax, 0
+    jl nextCol                  ; above the board
+    cmp eax, boardH
+    jge nextCol                 ; below the board
+
+    mov edx, edi
+    add edx, ecx                ; EDX = neighbour column
+    cmp edx, 0
+    jl nextCol                  ; left of the board
+    cmp edx, boardW
+    jge nextCol                 ; right of the board
+
+    imul eax, boardW            ; index = row * width + column
+    add eax, edx
+    mov edx, nbrCount
+    mov nbrList[edx*4], eax     ; store the neighbour index
+    inc nbrCount
+nextCol:
+    inc ecx
+    cmp ecx, 1
+    jle colStep
+    inc ebx
+    cmp ebx, 1
+    jle rowStep
+    popad
+    ret
+GetNeighbours ENDP
+
+; ---------------------------------------------------------------------------
+; CalcCounts: fills the counts array (mines around every cell)
+; ---------------------------------------------------------------------------
+CalcCounts PROC
+    pushad
+    mov esi, 0                  ; ESI = current cell
+cellLoop:
+    cmp esi, boardSize
+    jae countsDone
+    mov eax, esi
+    call GetNeighbours
+    mov ecx, nbrCount
+    mov edi, 0                  ; EDI = position in nbrList
+    mov ebx, 0                  ; EBX = mines found
+neighbourLoop:
+    mov eax, nbrList[edi*4]
+    test BYTE PTR board[eax], CELL_MINE
+    jz notAMine
+    inc ebx
+notAMine:
+    inc edi
+    loop neighbourLoop
+    mov counts[esi], bl
+    inc esi
+    jmp cellLoop
+countsDone:
+    popad
+    ret
+CalcCounts ENDP
+
+ROHAAN_D3_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  ROHAAN ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
