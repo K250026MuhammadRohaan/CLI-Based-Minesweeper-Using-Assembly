@@ -302,6 +302,60 @@ DrawCell ENDP
 
 RANA_D1_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 2  (DrawBoard, MoveCursor)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; DrawBoard: draws every cell
+; ---------------------------------------------------------------------------
+DrawBoard PROC
+    pushad
+    mov esi, 0
+boardLoop:
+    cmp esi, boardSize
+    jae boardDrawn
+    mov eax, esi
+    call DrawCell
+    inc esi
+    jmp boardLoop
+boardDrawn:
+    popad
+    ret
+DrawBoard ENDP
+
+; ---------------------------------------------------------------------------
+; MoveCursor: EAX = row change, EBX = column change (each -1, 0 or +1).
+;             Ignores moves that would leave the board.
+; ---------------------------------------------------------------------------
+MoveCursor PROC
+    pushad
+    add eax, cursorRow
+    js moveDone                 ; went above the board
+    cmp eax, boardH
+    jge moveDone                ; went below the board
+    add ebx, cursorCol
+    js moveDone                 ; went left of the board
+    cmp ebx, boardW
+    jge moveDone                ; went right of the board
+    mov esi, eax                ; ESI = new row
+    mov edi, ebx                ; EDI = new column
+
+    call GetCursorIndex         ; old cursor cell
+    push eax
+    mov cursorRow, esi
+    mov cursorCol, edi
+    pop eax
+    call DrawCell               ; redraw old cell (no longer highlighted)
+    call GetCursorIndex
+    call DrawCell               ; draw new cell (highlighted)
+moveDone:
+    popad
+    ret
+MoveCursor ENDP
+
+RANA_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  RANA ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
