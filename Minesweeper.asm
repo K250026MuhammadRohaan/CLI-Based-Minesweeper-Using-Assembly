@@ -356,6 +356,59 @@ MoveCursor ENDP
 
 RANA_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 3  (DrawStatus, WriteBest)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; DrawStatus: draws mines left, time and best time (numbers only)
+; ---------------------------------------------------------------------------
+DrawStatus PROC
+    pushad
+    GotoRC 1, 7
+    SetColor 15
+    mov eax, mineCount
+    sub eax, flagsPlaced        ; mines left = mines - flags placed
+    call WriteDec
+    mov edx, OFFSET strPad
+    call WriteString
+
+    GotoRC 1, 20
+    SetColor 15
+    mov eax, elapsedSec
+    call WriteDec
+    mov edx, OFFSET strPad
+    call WriteString
+
+    GotoRC 1, 34
+    SetColor 15
+    mov ebx, difficulty
+    mov eax, bestTimes[ebx*4]
+    call WriteBest
+    mov edx, OFFSET strPad
+    call WriteString
+    popad
+    ret
+DrawStatus ENDP
+
+; ---------------------------------------------------------------------------
+; WriteBest: prints the time in EAX as "N s", or "--" if EAX is 0
+; ---------------------------------------------------------------------------
+WriteBest PROC
+    cmp eax, 0
+    jne hasRecord
+    mov edx, OFFSET strNone
+    call WriteString
+    ret
+hasRecord:
+    call WriteDec
+    mov edx, OFFSET strSecUnit
+    call WriteString
+    ret
+WriteBest ENDP
+
+RANA_D3_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  RANA ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
