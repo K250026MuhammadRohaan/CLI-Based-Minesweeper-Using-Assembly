@@ -294,6 +294,106 @@ DifficultyMenu ENDP
 
 SARIM_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  SARIM RAZA ANSARI - DAY 3  (ShowHowToPlay)
+; ---------------------------------------------------------------------------
+.data
+strHelpTitle    BYTE "HOW TO PLAY",0
+strHelp1        BYTE "  Goal: open every safe tile without selecting a mine.",0
+strHelp2        BYTE "  Enter : select a tile. The tile and the 8 tiles around it",0
+strHelp3        BYTE "          are opened (3x3 area). Mines in that area stay hidden.",0
+strHelp4        BYTE "          You lose only if the tile you select is a mine.",0
+strHelp5        BYTE "  Arrows: move the cursor.",0
+strHelp6        BYTE "  F     : put or remove a flag on a suspected mine.",0
+strHelp7        BYTE "  C     : CHORD. On an opened number with enough flags around",0
+strHelp8        BYTE "          it, opens all the other hidden tiles around it.",0
+strHelp9        BYTE "  Cascade: blank tiles automatically open their neighbours.",0
+strHelp10       BYTE "  Numbers tell how many mines touch that tile.",0
+strHelp11       BYTE "  Your best time for each difficulty is saved in a file.",0
+strHelp12       BYTE "  Esc   : go back to the menu.",0
+.code
+
+; ---------------------------------------------------------------------------
+; ShowHowToPlay: prints the instructions screen
+; ---------------------------------------------------------------------------
+ShowHowToPlay PROC
+    call ClearScreen
+    GotoRC 1, 2
+    ShowText strHelpTitle, 14
+    call Crlf
+    call Crlf
+    ShowText strHelp1, 15
+    call Crlf
+    call Crlf
+    ShowText strHelp2, 11
+    call Crlf
+    ShowText strHelp3, 11
+    call Crlf
+    ShowText strHelp4, 11
+    call Crlf
+    ShowText strHelp5, 15
+    call Crlf
+    ShowText strHelp6, 15
+    call Crlf
+    ShowText strHelp7, 10
+    call Crlf
+    ShowText strHelp8, 10
+    call Crlf
+    ShowText strHelp9, 10
+    call Crlf
+    ShowText strHelp10, 15
+    call Crlf
+    ShowText strHelp11, 15
+    call Crlf
+    ShowText strHelp12, 15
+    call Crlf
+    call Crlf
+    ShowText strAnyKey, 7
+    call ReadChar
+    ret
+ShowHowToPlay ENDP
+
+SARIM_D3_DONE = 1      ; this day's code exists, so its stubs are skipped
+
+; ---------------------------------------------------------------------------
+;  SARIM RAZA ANSARI - DAY 4  (ShowBestTimes)
+; ---------------------------------------------------------------------------
+.data
+strBestTitle    BYTE "BEST TIMES",0
+strBestEasy     BYTE "  Easy   : ",0
+strBestMedium   BYTE "  Medium : ",0
+strBestHard     BYTE "  Hard   : ",0
+.code
+
+; ---------------------------------------------------------------------------
+; ShowBestTimes: prints the saved best time of each difficulty
+; ---------------------------------------------------------------------------
+ShowBestTimes PROC
+    call ClearScreen
+    GotoRC 2, 2
+    ShowText strBestTitle, 14
+    call Crlf
+    call Crlf
+    ShowText strBestEasy, 10
+    mov eax, bestTimes[0]
+    call WriteBest
+    call Crlf
+    ShowText strBestMedium, 14
+    mov eax, bestTimes[4]
+    call WriteBest
+    call Crlf
+    ShowText strBestHard, 12
+    mov eax, bestTimes[8]
+    call WriteBest
+    call Crlf
+    call Crlf
+    ShowText strAnyKey, 7
+    call ReadChar
+    ret
+ShowBestTimes ENDP
+
+SARIM_D4_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  SARIM ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
