@@ -409,6 +409,67 @@ WriteBest ENDP
 
 RANA_D3_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 4  (UpdateTimer, DrawGameScreen)
+; ---------------------------------------------------------------------------
+.data
+strGameTitle    BYTE "MINESWEEPER - ",0
+lblMines        BYTE "Mines:",0
+lblTime         BYTE "Time:",0
+lblBest         BYTE "Best:",0
+strControls     BYTE "Arrows:Move  Enter:Open  F:Flag  C:Chord  Esc:Menu",0
+.code
+
+; ---------------------------------------------------------------------------
+; UpdateTimer: recalculates elapsed seconds and redraws if the second changed
+; ---------------------------------------------------------------------------
+UpdateTimer PROC
+    pushad
+    cmp timerRunning, 0
+    je timerDone
+    cmp gameOver, 0
+    jne timerDone
+    call GetMseconds            ; milliseconds since midnight
+    sub eax, startTime
+    xor edx, edx
+    mov ecx, 1000
+    div ecx                     ; EAX = whole seconds
+    cmp eax, elapsedSec
+    je timerDone                ; same second, nothing to redraw
+    mov elapsedSec, eax
+    call DrawStatus
+timerDone:
+    popad
+    ret
+UpdateTimer ENDP
+
+; ---------------------------------------------------------------------------
+; DrawGameScreen: draws the title, labels, controls, numbers and the board
+; ---------------------------------------------------------------------------
+DrawGameScreen PROC
+    pushad
+    call ClearScreen
+    GotoRC 0, 0
+    ShowText strGameTitle, 14
+    mov eax, difficulty
+    mov edx, diffNames[eax*4]
+    call WriteString
+    GotoRC 1, 0
+    ShowText lblMines, 11
+    GotoRC 1, 14
+    ShowText lblTime, 11
+    GotoRC 1, 28
+    ShowText lblBest, 11
+    GotoRC 2, 0
+    ShowText strControls, 7
+    call DrawStatus
+    call DrawBoard
+    popad
+    ret
+DrawGameScreen ENDP
+
+RANA_D4_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  RANA ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
