@@ -579,6 +579,358 @@ ROHAAN_D6_DONE = 1      ; this day's code exists, so its stubs are skipped
 ; ############################################################################
 ; >>>>>>>>>>>>>>>>>>>>  RANA ZONE START  <<<<<<<<<<<<<<<<<<<<
 
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 1  (GetCursorIndex, DrawCell)
+; ---------------------------------------------------------------------------
+.data
+numColors       BYTE 7, 9, 2, 12, 1, 4, 3, 15, 8      ; colours for digits 0..8
+.code
+
+; ---------------------------------------------------------------------------
+; GetCursorIndex: returns EAX = cursorRow * boardW + cursorCol
+; ---------------------------------------------------------------------------
+GetCursorIndex PROC
+    mov eax, cursorRow
+    imul eax, boardW
+    add eax, cursorCol
+    ret
+GetCursorIndex ENDP
+
+; ---------------------------------------------------------------------------
+; DrawCell: EAX = cell index. Draws one cell (2 characters wide).
+;   Hidden = #   Flag = F   Number = coloured digit   Blank = space
+;   After the game: mines = *   exploded mine = red *   wrong flag = X
+;   The cell under the cursor gets a yellow background.
+; ---------------------------------------------------------------------------
+DrawCell PROC
+    pushad
+    mov esi, eax                ; ESI = cell index
+
+    ; --- is the cursor on this cell? (EDI = 1 if yes) ---
+    mov edi, 0
+    call GetCursorIndex
+    cmp eax, esi
+    jne notCursorCell
+    mov edi, 1
+notCursorCell:
+
+    ; --- work out the screen position ---
+    mov eax, esi
+    xor edx, edx
+    div boardW                  ; EAX = row, EDX = column
+    add eax, BOARD_Y            ; screen row
+    shl edx, 1                  ; each cell is 2 characters wide
+    add edx, BOARD_X            ; screen column
+    mov dh, al                  ; DH = row, DL = column
+    call Gotoxy
+
+    ; --- choose the character (AL) and colour (BL) ---
+    movzx ecx, BYTE PTR board[esi]      ; CL = cell state bits
+    mov al, '#'
+    mov bl, 7
+    cmp gameOver, 0
+    je normalView
+
+    ; game is over: show the mines
+    test cl, CELL_MINE
+    jz wrongFlagCheck
+    test cl, CELL_FLAG
+    jnz drawFlag                ; correctly flagged mine
+    cmp gameWon, 0
+    jne drawFlag                ; on a win, show all mines as flags
+    test cl, CELL_REVEALED
+    jnz exploded                ; the mine that was selected
+    mov al, '*'
+    mov bl, 12
+    jmp drawIt
+exploded:
+    mov al, '*'
+    mov bl, EXPLODE_COLOR
+    jmp drawIt
+wrongFlagCheck:
+    test cl, CELL_FLAG
+    jz normalView
+    mov al, 'X'                 ; flag on a safe tile
+    mov bl, 14
+    jmp drawIt
+
+normalView:
+    test cl, CELL_FLAG
+    jnz drawFlag
+    test cl, CELL_REVEALED
+    jz drawIt                   ; hidden tile stays '#'
+    movzx edx, BYTE PTR counts[esi]
+    cmp edx, 0
+    je blankCell
+    mov al, dl
+    add al, '0'                 ; digit character
+    mov bl, numColors[edx]
+    jmp drawIt
+blankCell:
+    mov al, ' '
+    jmp drawIt
+drawFlag:
+    mov al, 'F'
+    mov bl, 12
+
+drawIt:
+    cmp edi, 1
+    jne applyColour
+    mov bl, CURSOR_COLOR        ; cursor overrides the colour
+applyColour:
+    mov dl, al                  ; keep the character
+    movzx eax, bl
+    call SetTextColor
+    mov al, dl
+    call WriteChar
+    mov al, ' '
+    call WriteChar
+    SetColor 7                  ; do not leave the highlight colour active
+    popad
+    ret
+DrawCell ENDP
+
+RANA_D1_DONE = 1      ; this day's code exists, so its stubs are skipped
+
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 2  (DrawBoard, MoveCursor)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; DrawBoard: draws every cell
+; ---------------------------------------------------------------------------
+DrawBoard PROC
+    pushad
+    mov esi, 0
+boardLoop:
+    cmp esi, boardSize
+    jae boardDrawn
+    mov eax, esi
+    call DrawCell
+    inc esi
+    jmp boardLoop
+boardDrawn:
+    popad
+    ret
+DrawBoard ENDP
+
+; ---------------------------------------------------------------------------
+; MoveCursor: EAX = row change, EBX = column change (each -1, 0 or +1).
+;             Ignores moves that would leave the board.
+; ---------------------------------------------------------------------------
+MoveCursor PROC
+    pushad
+    add eax, cursorRow
+    js moveDone                 ; went above the board
+    cmp eax, boardH
+    jge moveDone                ; went below the board
+    add ebx, cursorCol
+    js moveDone                 ; went left of the board
+    cmp ebx, boardW
+    jge moveDone                ; went right of the board
+    mov esi, eax                ; ESI = new row
+    mov edi, ebx                ; EDI = new column
+
+    call GetCursorIndex         ; old cursor cell
+    push eax
+    mov cursorRow, esi
+    mov cursorCol, edi
+    pop eax
+    call DrawCell               ; redraw old cell (no longer highlighted)
+    call GetCursorIndex
+    call DrawCell               ; draw new cell (highlighted)
+moveDone:
+    popad
+    ret
+MoveCursor ENDP
+
+RANA_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
+
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 3  (DrawStatus, WriteBest)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; DrawStatus: draws mines left, time and best time (numbers only)
+; ---------------------------------------------------------------------------
+DrawStatus PROC
+    pushad
+    GotoRC 1, 7
+    SetColor 15
+    mov eax, mineCount
+    sub eax, flagsPlaced        ; mines left = mines - flags placed
+    call WriteDec
+    mov edx, OFFSET strPad
+    call WriteString
+
+    GotoRC 1, 20
+    SetColor 15
+    mov eax, elapsedSec
+    call WriteDec
+    mov edx, OFFSET strPad
+    call WriteString
+
+    GotoRC 1, 34
+    SetColor 15
+    mov ebx, difficulty
+    mov eax, bestTimes[ebx*4]
+    call WriteBest
+    mov edx, OFFSET strPad
+    call WriteString
+    popad
+    ret
+DrawStatus ENDP
+
+; ---------------------------------------------------------------------------
+; WriteBest: prints the time in EAX as "N s", or "--" if EAX is 0
+; ---------------------------------------------------------------------------
+WriteBest PROC
+    cmp eax, 0
+    jne hasRecord
+    mov edx, OFFSET strNone
+    call WriteString
+    ret
+hasRecord:
+    call WriteDec
+    mov edx, OFFSET strSecUnit
+    call WriteString
+    ret
+WriteBest ENDP
+
+RANA_D3_DONE = 1      ; this day's code exists, so its stubs are skipped
+
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 4  (UpdateTimer, DrawGameScreen)
+; ---------------------------------------------------------------------------
+.data
+strGameTitle    BYTE "MINESWEEPER - ",0
+lblMines        BYTE "Mines:",0
+lblTime         BYTE "Time:",0
+lblBest         BYTE "Best:",0
+strControls     BYTE "Arrows:Move  Enter:Open  F:Flag  C:Chord  Esc:Menu",0
+.code
+
+; ---------------------------------------------------------------------------
+; UpdateTimer: recalculates elapsed seconds and redraws if the second changed
+; ---------------------------------------------------------------------------
+UpdateTimer PROC
+    pushad
+    cmp timerRunning, 0
+    je timerDone
+    cmp gameOver, 0
+    jne timerDone
+    call GetMseconds            ; milliseconds since midnight
+    sub eax, startTime
+    xor edx, edx
+    mov ecx, 1000
+    div ecx                     ; EAX = whole seconds
+    cmp eax, elapsedSec
+    je timerDone                ; same second, nothing to redraw
+    mov elapsedSec, eax
+    call DrawStatus
+timerDone:
+    popad
+    ret
+UpdateTimer ENDP
+
+; ---------------------------------------------------------------------------
+; DrawGameScreen: draws the title, labels, controls, numbers and the board
+; ---------------------------------------------------------------------------
+DrawGameScreen PROC
+    pushad
+    call ClearScreen
+    GotoRC 0, 0
+    ShowText strGameTitle, 14
+    mov eax, difficulty
+    mov edx, diffNames[eax*4]
+    call WriteString
+    GotoRC 1, 0
+    ShowText lblMines, 11
+    GotoRC 1, 14
+    ShowText lblTime, 11
+    GotoRC 1, 28
+    ShowText lblBest, 11
+    GotoRC 2, 0
+    ShowText strControls, 7
+    call DrawStatus
+    call DrawBoard
+    popad
+    ret
+DrawGameScreen ENDP
+
+RANA_D4_DONE = 1      ; this day's code exists, so its stubs are skipped
+
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 5  (LoadBestTimes, SaveBestTimes)
+; ---------------------------------------------------------------------------
+.data
+fileName        BYTE "besttime.dat",0
+fileHandle      DWORD 0
+.code
+
+; ---------------------------------------------------------------------------
+; LoadBestTimes: reads the 3 saved times from the file (if it exists)
+; ---------------------------------------------------------------------------
+LoadBestTimes PROC
+    pushad
+    mov edx, OFFSET fileName
+    call OpenInputFile          ; EAX = file handle
+    cmp eax, INVALID_HANDLE_VALUE
+    je loadDone                 ; no file yet, keep zeros
+    mov fileHandle, eax
+    mov edx, OFFSET bestTimes
+    mov ecx, 12                 ; 3 DWORDs = 12 bytes
+    call ReadFromFile
+    mov eax, fileHandle
+    call CloseFile
+loadDone:
+    popad
+    ret
+LoadBestTimes ENDP
+
+; ---------------------------------------------------------------------------
+; SaveBestTimes: writes the 3 best times to the file
+; ---------------------------------------------------------------------------
+SaveBestTimes PROC
+    pushad
+    mov edx, OFFSET fileName
+    call CreateOutputFile       ; EAX = file handle
+    cmp eax, INVALID_HANDLE_VALUE
+    je saveDone
+    mov fileHandle, eax
+    mov edx, OFFSET bestTimes
+    mov ecx, 12
+    call WriteToFile
+    mov eax, fileHandle
+    call CloseFile
+saveDone:
+    popad
+    ret
+SaveBestTimes ENDP
+
+RANA_D5_DONE = 1      ; this day's code exists, so its stubs are skipped
+
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 6  (RefreshScreen)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; RefreshScreen: redraws board and numbers, and shows the end message if done
+; ---------------------------------------------------------------------------
+RefreshScreen PROC
+    pushad
+    call DrawBoard
+    call DrawStatus
+    cmp gameOver, 0
+    je refreshDone
+    call ShowEndMessage
+refreshDone:
+    popad
+    ret
+RefreshScreen ENDP
+
+RANA_D6_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  RANA ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
