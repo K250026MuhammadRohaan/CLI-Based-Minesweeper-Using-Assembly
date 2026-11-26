@@ -470,6 +470,56 @@ DrawGameScreen ENDP
 
 RANA_D4_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 5  (LoadBestTimes, SaveBestTimes)
+; ---------------------------------------------------------------------------
+.data
+fileName        BYTE "besttime.dat",0
+fileHandle      DWORD 0
+.code
+
+; ---------------------------------------------------------------------------
+; LoadBestTimes: reads the 3 saved times from the file (if it exists)
+; ---------------------------------------------------------------------------
+LoadBestTimes PROC
+    pushad
+    mov edx, OFFSET fileName
+    call OpenInputFile          ; EAX = file handle
+    cmp eax, INVALID_HANDLE_VALUE
+    je loadDone                 ; no file yet, keep zeros
+    mov fileHandle, eax
+    mov edx, OFFSET bestTimes
+    mov ecx, 12                 ; 3 DWORDs = 12 bytes
+    call ReadFromFile
+    mov eax, fileHandle
+    call CloseFile
+loadDone:
+    popad
+    ret
+LoadBestTimes ENDP
+
+; ---------------------------------------------------------------------------
+; SaveBestTimes: writes the 3 best times to the file
+; ---------------------------------------------------------------------------
+SaveBestTimes PROC
+    pushad
+    mov edx, OFFSET fileName
+    call CreateOutputFile       ; EAX = file handle
+    cmp eax, INVALID_HANDLE_VALUE
+    je saveDone
+    mov fileHandle, eax
+    mov edx, OFFSET bestTimes
+    mov ecx, 12
+    call WriteToFile
+    mov eax, fileHandle
+    call CloseFile
+saveDone:
+    popad
+    ret
+SaveBestTimes ENDP
+
+RANA_D5_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  RANA ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
