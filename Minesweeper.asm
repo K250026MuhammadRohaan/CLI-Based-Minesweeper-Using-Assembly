@@ -356,6 +356,201 @@ CalcCounts ENDP
 
 ROHAAN_D3_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  MUHAMMAD ROHAAN - DAY 4  (RevealCell, RevealArea)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; RevealCell: EAX = cell index. Opens the cell only if it is hidden,
+;             not flagged and not a mine.
+; ---------------------------------------------------------------------------
+RevealCell PROC
+    pushad
+    test BYTE PTR board[eax], CELL_FLAG OR CELL_REVEALED OR CELL_MINE
+    jnz revealSkip
+    or BYTE PTR board[eax], CELL_REVEALED
+    inc revealedCount
+revealSkip:
+    popad
+    ret
+RevealCell ENDP
+
+; ---------------------------------------------------------------------------
+; RevealArea: EAX = cell index. Opens that cell and its 8 neighbours
+;             (the 3x3 area). Mines in the area stay hidden.
+; ---------------------------------------------------------------------------
+RevealArea PROC
+    pushad
+    mov esi, eax
+    call RevealCell             ; the centre cell (EAX = index)
+    mov eax, esi
+    call GetNeighbours
+    mov ecx, nbrCount
+    mov edi, 0
+areaLoop:
+    mov eax, nbrList[edi*4]
+    call RevealCell
+    inc edi
+    loop areaLoop
+    popad
+    ret
+RevealArea ENDP
+
+ROHAAN_D4_DONE = 1      ; this day's code exists, so its stubs are skipped
+
+; ---------------------------------------------------------------------------
+;  MUHAMMAD ROHAAN - DAY 5  (Cascade, SelectCell)
+; ---------------------------------------------------------------------------
+.data
+passStart       DWORD 0         ; used by Cascade
+.code
+
+; ---------------------------------------------------------------------------
+; Cascade: every revealed blank cell (0 mines nearby) opens its neighbours.
+;          The board is scanned again and again until nothing new opens.
+; ---------------------------------------------------------------------------
+Cascade PROC
+    pushad
+cascadeAgain:
+    mov eax, revealedCount
+    mov passStart, eax          ; remember how many were open before this pass
+    mov esi, 0
+cascadeScan:
+    cmp esi, boardSize
+    jae cascadePassEnd
+    test BYTE PTR board[esi], CELL_REVEALED
+    jz cascadeNext              ; skip hidden cells
+    cmp BYTE PTR counts[esi], 0
+    jne cascadeNext             ; skip cells that show a number
+    mov eax, esi                ; revealed blank cell: open its neighbours
+    call GetNeighbours
+    mov ecx, nbrCount
+    mov edi, 0
+cascadeOpen:
+    mov eax, nbrList[edi*4]
+    call RevealCell
+    inc edi
+    loop cascadeOpen
+cascadeNext:
+    inc esi
+    jmp cascadeScan
+cascadePassEnd:
+    mov eax, revealedCount
+    cmp eax, passStart
+    jne cascadeAgain            ; something new opened, scan once more
+    popad
+    ret
+Cascade ENDP
+
+; ---------------------------------------------------------------------------
+; SelectCell: Enter key. Handles the first move, mine hit, 3x3 reveal,
+;             cascade and win check for the cell under the cursor.
+; ---------------------------------------------------------------------------
+SelectCell PROC
+    pushad
+    call GetCursorIndex
+    mov esi, eax
+    test BYTE PTR board[esi], CELL_FLAG OR CELL_REVEALED
+    jnz selDone                 ; flagged or already open: do nothing
+
+    cmp firstMove, 0
+    je selNotFirst
+    mov firstMove, 0            ; this is the first selection
+    mov timerRunning, 1
+    call GetMseconds
+    mov startTime, eax          ; the timer starts now
+    call GetCursorIndex
+    mov esi, eax
+    test BYTE PTR board[esi], CELL_MINE
+    jz selNotFirst
+    call RelocateMine           ; first pick is never a mine
+
+selNotFirst:
+    test BYTE PTR board[esi], CELL_MINE
+    jnz selHitMine
+    mov eax, esi
+    call RevealArea             ; open the 3x3 area
+    call Cascade                ; spread through blank tiles
+    call CheckWin
+    jmp selDone
+
+selHitMine:
+    or BYTE PTR board[esi], CELL_REVEALED   ; remember which mine exploded
+    mov gameOver, 1
+selDone:
+    popad
+    ret
+SelectCell ENDP
+
+ROHAAN_D5_DONE = 1      ; this day's code exists, so its stubs are skipped
+
+; ---------------------------------------------------------------------------
+;  MUHAMMAD ROHAAN - DAY 6  (ChordCell)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; ChordCell: C key. If the cursor is on an opened number and the flags around
+;            it equal that number, open every other hidden neighbour.
+;            (Wrong flags can make this hit a mine and lose the game.)
+; ---------------------------------------------------------------------------
+ChordCell PROC
+    pushad
+    call GetCursorIndex
+    mov esi, eax
+    test BYTE PTR board[esi], CELL_REVEALED
+    jz chordDone                ; only works on opened tiles
+    movzx ebx, BYTE PTR counts[esi]
+    cmp ebx, 0
+    je chordDone                ; blank tiles have nothing to chord
+
+    mov eax, esi
+    call GetNeighbours
+
+    ; count the flags around the cell (EDX)
+    mov ecx, nbrCount
+    mov edi, 0
+    mov edx, 0
+flagCountLoop:
+    mov eax, nbrList[edi*4]
+    test BYTE PTR board[eax], CELL_FLAG
+    jz noFlagHere
+    inc edx
+noFlagHere:
+    inc edi
+    loop flagCountLoop
+
+    cmp edx, ebx                ; flags must equal the number shown
+    jne chordDone
+
+    ; open every hidden, unflagged neighbour
+    mov ecx, nbrCount
+    mov edi, 0
+chordOpenLoop:
+    mov eax, nbrList[edi*4]
+    test BYTE PTR board[eax], CELL_FLAG OR CELL_REVEALED
+    jnz chordNext
+    test BYTE PTR board[eax], CELL_MINE
+    jz chordSafe
+    or BYTE PTR board[eax], CELL_REVEALED   ; opened a mine: exploded
+    mov gameOver, 1
+    jmp chordNext
+chordSafe:
+    call RevealCell
+chordNext:
+    inc edi
+    loop chordOpenLoop
+
+    cmp gameOver, 0
+    jne chordDone
+    call Cascade
+    call CheckWin
+chordDone:
+    popad
+    ret
+ChordCell ENDP
+
+ROHAAN_D6_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  ROHAAN ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
