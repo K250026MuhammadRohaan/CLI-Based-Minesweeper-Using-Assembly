@@ -6,3 +6,4 @@ Release/
 *.exe
 *.ilk
 *.pdb
+bin/Minesweeper.asm
