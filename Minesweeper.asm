@@ -520,6 +520,27 @@ SaveBestTimes ENDP
 
 RANA_D5_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  RANA MUHAMMAD HUSSAIN - DAY 6  (RefreshScreen)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; RefreshScreen: redraws board and numbers, and shows the end message if done
+; ---------------------------------------------------------------------------
+RefreshScreen PROC
+    pushad
+    call DrawBoard
+    call DrawStatus
+    cmp gameOver, 0
+    je refreshDone
+    call ShowEndMessage
+refreshDone:
+    popad
+    ret
+RefreshScreen ENDP
+
+RANA_D6_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  RANA ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
