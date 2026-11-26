@@ -394,6 +394,122 @@ ShowBestTimes ENDP
 
 SARIM_D4_DONE = 1      ; this day's code exists, so its stubs are skipped
 
+; ---------------------------------------------------------------------------
+;  SARIM RAZA ANSARI - DAY 5  (ToggleFlag, ShowEndMessage)
+; ---------------------------------------------------------------------------
+.data
+strWin          BYTE "YOU WIN!  Time: ",0
+strLose         BYTE "GAME OVER!  You selected a mine.",0
+strRecord       BYTE "   NEW BEST TIME!",0
+strReturn       BYTE "Press Enter or Esc to return to the menu.",0
+.code
+
+; ---------------------------------------------------------------------------
+; ToggleFlag: F key. Puts or removes a flag on the hidden cell under the cursor
+; ---------------------------------------------------------------------------
+ToggleFlag PROC
+    pushad
+    call GetCursorIndex
+    mov esi, eax
+    test BYTE PTR board[esi], CELL_REVEALED
+    jnz flagDone                ; cannot flag an opened tile
+    test BYTE PTR board[esi], CELL_FLAG
+    jnz removeFlag
+    mov eax, flagsPlaced
+    cmp eax, mineCount
+    jae flagDone                ; no more flags than mines
+    or BYTE PTR board[esi], CELL_FLAG
+    inc flagsPlaced
+    jmp flagRedraw
+removeFlag:
+    xor BYTE PTR board[esi], CELL_FLAG
+    dec flagsPlaced
+flagRedraw:
+    mov eax, esi
+    call DrawCell
+    call DrawStatus
+flagDone:
+    popad
+    ret
+ToggleFlag ENDP
+
+; ---------------------------------------------------------------------------
+; ShowEndMessage: prints the win or lose message under the controls line
+; ---------------------------------------------------------------------------
+ShowEndMessage PROC
+    pushad
+    GotoRC 3, 0
+    cmp gameWon, 0
+    jne showWin
+    ShowText strLose, 12
+    jmp showPrompt
+showWin:
+    ShowText strWin, 10
+    mov eax, elapsedSec
+    call WriteDec
+    ShowText strSecUnit, 10
+    cmp newRecord, 0
+    je showPrompt
+    ShowText strRecord, 14
+showPrompt:
+    GotoRC 4, 0
+    ShowText strReturn, 7
+    popad
+    ret
+ShowEndMessage ENDP
+
+SARIM_D5_DONE = 1      ; this day's code exists, so its stubs are skipped
+
+; ---------------------------------------------------------------------------
+;  SARIM RAZA ANSARI - DAY 6  (CheckWin)
+; ---------------------------------------------------------------------------
+
+; ---------------------------------------------------------------------------
+; CheckWin: the player wins when all safe tiles are open.
+;           Also saves the best time if it is a new record.
+; ---------------------------------------------------------------------------
+CheckWin PROC
+    pushad
+    mov eax, boardSize
+    sub eax, mineCount          ; number of safe tiles
+    cmp revealedCount, eax
+    jne winDone
+
+    mov gameOver, 1
+    mov gameWon, 1
+    mov timerRunning, 0
+    mov eax, mineCount
+    mov flagsPlaced, eax        ; all mines count as flagged
+
+    call GetMseconds            ; final time in seconds
+    sub eax, startTime
+    xor edx, edx
+    mov ecx, 1000
+    div ecx
+    cmp eax, 0
+    jne timeOk
+    mov eax, 1                  ; never store 0 (0 means "no record")
+timeOk:
+    mov elapsedSec, eax
+
+    ; compare with the saved best time of this difficulty
+    mov ebx, difficulty
+    mov ecx, bestTimes[ebx*4]
+    cmp ecx, 0
+    je isRecord                 ; no record yet
+    cmp eax, ecx
+    jae winDone                 ; not faster than the record
+isRecord:
+    mov bestTimes[ebx*4], eax
+    mov newRecord, 1
+    call SaveBestTimes
+winDone:
+    popad
+    ret
+CheckWin ENDP
+
+SARIM_D6_DONE = 1      ; this day's code exists, so its stubs are skipped
+
 ; >>>>>>>>>>>>>>>>>>>>  SARIM ZONE END  <<<<<<<<<<<<<<<<<<<<<<
 
 ; ----------------------------------------------------------------------------
