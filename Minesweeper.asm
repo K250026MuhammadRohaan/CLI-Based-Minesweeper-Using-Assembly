@@ -9,14 +9,11 @@
 ;   - Selecting a tile (Enter) reveals that tile AND the 8 tiles around it
 ;     (a 3x3 area). Mines inside the 3x3 area stay hidden.
 ;   - The player loses ONLY if the selected tile itself is a mine.
-;   - If the very first selected tile is a mine, the mine is moved elsewhere.
 ;   - CASCADE: any revealed blank tile (0 mines nearby) automatically opens
 ;     its neighbours, and this repeats until no more blank tiles can spread.
-;   - CHORDING (C key): on a revealed number whose flag count equals the
-;     number, all remaining hidden neighbours are opened at once.
 ;   - Best time of each difficulty is saved in "besttime.dat".
 ;
-;  Controls: Arrow keys = move | Enter = select | F = flag | C = chord
+;  Controls: Arrow keys = move | Enter = select | F = flag
 ;            Esc = back to menu
 ; ============================================================================
 
@@ -44,11 +41,9 @@ KEY_DOWN        EQU 28h
 KEY_ENTER       EQU 0Dh
 KEY_ESC         EQU 1Bh
 KEY_F           EQU 46h
-KEY_C           EQU 43h
 
 ; --- Colours used for drawing ---
 CURSOR_COLOR    EQU 0E0h        ; black text on yellow background
-EXPLODE_COLOR   EQU 4Fh         ; white text on red background
 
 ; ============================================================================
 ;  MACROS
@@ -76,7 +71,7 @@ ShowText MACRO textLabel, colour
 ENDM
 
 ; ============================================================================
-;  DATA SECTION (shared by all modules)
+;  DATA SECTION
 ; ============================================================================
 .data
 
@@ -109,61 +104,272 @@ timerRunning    DWORD 0
 startTime       DWORD 0
 elapsedSec      DWORD 0
 newRecord       DWORD 0
+passStart       DWORD 0         ; used by Cascade
 
 ; ----- Neighbour list filled by GetNeighbours -----
 nbrCount        DWORD 0
 nbrList         DWORD 8 DUP(0)
 
-; ----- Best times (Easy, Medium, Hard; 0 = no record yet) -----
-bestTimes       DWORD 3 DUP(0)
+; ----- Number colours for 0..8 -----
+numColors       BYTE 7, 9, 2, 12, 1, 4, 3, 15, 8
 
-; ----- Strings used by more than one module -----
+; ----- Best-time file -----
+fileName        BYTE "besttime.dat",0
+fileHandle      DWORD 0
+bestTimes       DWORD 3 DUP(0)  ; best seconds for Easy, Medium, Hard (0 = none)
+
+; ----- Text strings -----
 strEasy         BYTE "EASY",0
 strMedium       BYTE "MEDIUM",0
 strHard         BYTE "HARD",0
+
+strMenuTitle    BYTE "      M I N E S W E E P E R",0
+strMenuLine     BYTE "  ===============================",0
+strMenu1        BYTE "    1. New Game",0
+strMenu2        BYTE "    2. Best Times",0
+strMenu3        BYTE "    3. How to Play",0
+strMenu4        BYTE "    4. Exit",0
+
+strChoose       BYTE "  Choose a difficulty:",0
+strOptEasy      BYTE "    1. Easy   (9 x 9,   10 mines)",0
+strOptMedium    BYTE "    2. Medium (16 x 16, 40 mines)",0
+strOptHard      BYTE "    3. Hard   (30 x 16, 99 mines)",0
+strEscBack      BYTE "    Esc. Back",0
+
+strGameTitle    BYTE "MINESWEEPER - ",0
+lblMines        BYTE "Mines:",0
+lblTime         BYTE "Time:",0
+lblBest         BYTE "Best:",0
+strControls     BYTE "Arrows:Move  Enter:Open  F:Flag  Esc:Menu",0
 strPad          BYTE "    ",0
 strNone         BYTE "--",0
 strSecUnit      BYTE " s",0
+
+strWin          BYTE "YOU WIN!  Time: ",0
+strLose         BYTE "GAME OVER!  You selected a mine.",0
+strRecord       BYTE "   NEW BEST TIME!",0
+strReturn       BYTE "Press Enter or Esc to return to the menu.",0
+
+strBestTitle    BYTE "BEST TIMES",0
+strBestEasy     BYTE "  Easy   : ",0
+strBestMedium   BYTE "  Medium : ",0
+strBestHard     BYTE "  Hard   : ",0
 strAnyKey       BYTE "  Press any key to go back...",0
 
-; ============================================================================
-;  "DAY DONE" FLAGS  (each day file sets its own flag to 1 at its last line)
-; ============================================================================
-ROHAAN_D1_DONE  = 0
-ROHAAN_D2_DONE  = 0
-ROHAAN_D3_DONE  = 0
-ROHAAN_D4_DONE  = 0
-ROHAAN_D5_DONE  = 0
-ROHAAN_D6_DONE  = 0
-SARIM_D1_DONE   = 0
-SARIM_D2_DONE   = 0
-SARIM_D3_DONE   = 0
-SARIM_D4_DONE   = 0
-SARIM_D5_DONE   = 0
-SARIM_D6_DONE   = 0
-RANA_D1_DONE    = 0
-RANA_D2_DONE    = 0
-RANA_D3_DONE    = 0
-RANA_D4_DONE    = 0
-RANA_D5_DONE    = 0
-RANA_D6_DONE    = 0
+strHelpTitle    BYTE "HOW TO PLAY",0
+strHelp1        BYTE "  Goal: open every safe tile without selecting a mine.",0
+strHelp2        BYTE "  Enter : select a tile. The tile and the 8 tiles around it",0
+strHelp3        BYTE "          are opened (3x3 area). Mines in that area stay hidden.",0
+strHelp4        BYTE "          You lose only if the tile you select is a mine.",0
+strHelp5        BYTE "  Arrows: move the cursor.",0
+strHelp6        BYTE "  F     : put or remove a flag on a suspected mine.",0
+strHelp9        BYTE "  Cascade: blank tiles automatically open their neighbours.",0
+strHelp10       BYTE "  Numbers tell how many mines touch that tile.",0
+strHelp11       BYTE "  Your best time for each difficulty is saved in a file.",0
+strHelp12       BYTE "  Esc   : go back to the menu.",0
 
 ; ============================================================================
 ;  CODE SECTION
-;  Layout: [Rohaan zone] [Sarim zone] [Rana zone] [stubs] [main + game loop]
 ; ============================================================================
 .code
 
-; ############################################################################
-; #  ZONE 1 OF 3 :  MUHAMMAD ROHAAN  -  Board and mines / Neighbour counting / 3x3 reveal (+Cascade, Chording)
-; #  Only Muhammad Rohaan writes inside this zone, between the START and END lines.
-; #  Everything outside the three zones is shared base code: do NOT edit it.
-; ############################################################################
-; >>>>>>>>>>>>>>>>>>>>  ROHAAN ZONE START  <<<<<<<<<<<<<<<<<<<<
+; ============================================================================
+;  MAIN PROGRAM
+; ============================================================================
+main PROC
+    call Randomize              ; seed the random number generator
+    call LoadBestTimes          ; read saved best times (if file exists)
+    call MainMenu               ; run the menu until the player exits
+    exit
+main ENDP
+
+; ============================================================================
+;  MODULE 1: MAIN MENU AND SCREENS
+; ============================================================================
 
 ; ---------------------------------------------------------------------------
-;  MUHAMMAD ROHAAN - DAY 1  (SetDifficulty, InitGame)
+; ClearScreen: resets colour to normal, then clears the console
 ; ---------------------------------------------------------------------------
+ClearScreen PROC
+    SetColor 7
+    call Clrscr
+    ret
+ClearScreen ENDP
+
+; ---------------------------------------------------------------------------
+; MainMenu: shows the menu and handles the choices 1-4
+; ---------------------------------------------------------------------------
+MainMenu PROC
+menuTop:
+    call ClearScreen
+    GotoRC 2, 0
+    ShowText strMenuLine, 11
+    call Crlf
+    ShowText strMenuTitle, 14
+    call Crlf
+    ShowText strMenuLine, 11
+    call Crlf
+    call Crlf
+    ShowText strMenu1, 10
+    call Crlf
+    ShowText strMenu2, 10
+    call Crlf
+    ShowText strMenu3, 10
+    call Crlf
+    ShowText strMenu4, 12
+    call Crlf
+
+    call ReadChar               ; wait for a key, result in AL
+    cmp al, '1'
+    je chooseNew
+    cmp al, '2'
+    je chooseBest
+    cmp al, '3'
+    je chooseHelp
+    cmp al, '4'
+    je menuExit
+    jmp menuTop
+
+chooseNew:
+    call DifficultyMenu
+    jmp menuTop
+chooseBest:
+    call ShowBestTimes
+    jmp menuTop
+chooseHelp:
+    call ShowHowToPlay
+    jmp menuTop
+menuExit:
+    call ClearScreen
+    ret
+MainMenu ENDP
+
+; ---------------------------------------------------------------------------
+; DifficultyMenu: lets the player pick Easy / Medium / Hard, then plays
+; ---------------------------------------------------------------------------
+DifficultyMenu PROC
+    call ClearScreen
+    GotoRC 3, 0
+    ShowText strChoose, 11
+    call Crlf
+    call Crlf
+    ShowText strOptEasy, 10
+    call Crlf
+    ShowText strOptMedium, 14
+    call Crlf
+    ShowText strOptHard, 12
+    call Crlf
+    ShowText strEscBack, 7
+    call Crlf
+
+readDiff:
+    call ReadChar
+    cmp al, '1'
+    je pickEasy
+    cmp al, '2'
+    je pickMedium
+    cmp al, '3'
+    je pickHard
+    cmp al, 27                  ; Esc key
+    je diffBack
+    jmp readDiff
+
+pickEasy:
+    mov difficulty, 0
+    jmp startIt
+pickMedium:
+    mov difficulty, 1
+    jmp startIt
+pickHard:
+    mov difficulty, 2
+startIt:
+    call PlayGame
+diffBack:
+    ret
+DifficultyMenu ENDP
+
+; ---------------------------------------------------------------------------
+; ShowBestTimes: prints the saved best time of each difficulty
+; ---------------------------------------------------------------------------
+ShowBestTimes PROC
+    call ClearScreen
+    GotoRC 2, 2
+    ShowText strBestTitle, 14
+    call Crlf
+    call Crlf
+    ShowText strBestEasy, 10
+    mov eax, bestTimes[0]
+    call WriteBest
+    call Crlf
+    ShowText strBestMedium, 14
+    mov eax, bestTimes[4]
+    call WriteBest
+    call Crlf
+    ShowText strBestHard, 12
+    mov eax, bestTimes[8]
+    call WriteBest
+    call Crlf
+    call Crlf
+    ShowText strAnyKey, 7
+    call ReadChar
+    ret
+ShowBestTimes ENDP
+
+; ---------------------------------------------------------------------------
+; ShowHowToPlay: prints the instructions screen
+; ---------------------------------------------------------------------------
+ShowHowToPlay PROC
+    call ClearScreen
+    GotoRC 1, 2
+    ShowText strHelpTitle, 14
+    call Crlf
+    call Crlf
+    ShowText strHelp1, 15
+    call Crlf
+    call Crlf
+    ShowText strHelp2, 11
+    call Crlf
+    ShowText strHelp3, 11
+    call Crlf
+    ShowText strHelp4, 11
+    call Crlf
+    ShowText strHelp5, 15
+    call Crlf
+    ShowText strHelp6, 15
+    call Crlf
+    ShowText strHelp9, 10
+    call Crlf
+    ShowText strHelp10, 15
+    call Crlf
+    ShowText strHelp11, 15
+    call Crlf
+    ShowText strHelp12, 15
+    call Crlf
+    call Crlf
+    ShowText strAnyKey, 7
+    call ReadChar
+    ret
+ShowHowToPlay ENDP
+
+; ---------------------------------------------------------------------------
+; WriteBest: prints the time in EAX as "N s", or "--" if EAX is 0
+; ---------------------------------------------------------------------------
+WriteBest PROC
+    cmp eax, 0
+    jne hasRecord
+    mov edx, OFFSET strNone
+    call WriteString
+    ret
+hasRecord:
+    call WriteDec
+    mov edx, OFFSET strSecUnit
+    call WriteString
+    ret
+WriteBest ENDP
+
+; ============================================================================
+;  MODULE 2: BOARD SETUP AND MINE PLACEMENT
+; ============================================================================
 
 ; ---------------------------------------------------------------------------
 ; SetDifficulty: copies width, height and mines for the chosen difficulty
@@ -224,12 +430,6 @@ clearLoop:
     ret
 InitGame ENDP
 
-ROHAAN_D1_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  MUHAMMAD ROHAAN - DAY 2  (PlaceMines, RelocateMine)
-; ---------------------------------------------------------------------------
-
 ; ---------------------------------------------------------------------------
 ; PlaceMines: puts mineCount mines on random, different cells
 ; ---------------------------------------------------------------------------
@@ -247,31 +447,9 @@ placeLoop:
     ret
 PlaceMines ENDP
 
-; ---------------------------------------------------------------------------
-; RelocateMine: ESI = index of a mine. Moves it to a random empty cell
-;               and recalculates the counts. (Used if the first pick is a mine)
-; ---------------------------------------------------------------------------
-RelocateMine PROC
-    pushad
-    xor BYTE PTR board[esi], CELL_MINE      ; remove the mine from this cell
-findNewSpot:
-    mov eax, boardSize
-    call RandomRange
-    cmp eax, esi
-    je findNewSpot                          ; not the same cell
-    test BYTE PTR board[eax], CELL_MINE
-    jnz findNewSpot                         ; not a cell that already has a mine
-    or BYTE PTR board[eax], CELL_MINE
-    call CalcCounts
-    popad
-    ret
-RelocateMine ENDP
-
-ROHAAN_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  MUHAMMAD ROHAAN - DAY 3  (GetNeighbours, CalcCounts)
-; ---------------------------------------------------------------------------
+; ============================================================================
+;  MODULE 3: NEIGHBOUR COUNTING
+; ============================================================================
 
 ; ---------------------------------------------------------------------------
 ; GetNeighbours: EAX = cell index.
@@ -354,11 +532,210 @@ countsDone:
     ret
 CalcCounts ENDP
 
-ROHAAN_D3_DONE = 1      ; this day's code exists, so its stubs are skipped
+; ============================================================================
+;  MODULE 4: DISPLAY AND CURSOR
+; ============================================================================
 
 ; ---------------------------------------------------------------------------
-;  MUHAMMAD ROHAAN - DAY 4  (RevealCell, RevealArea)
+; GetCursorIndex: returns EAX = cursorRow * boardW + cursorCol
 ; ---------------------------------------------------------------------------
+GetCursorIndex PROC
+    mov eax, cursorRow
+    imul eax, boardW
+    add eax, cursorCol
+    ret
+GetCursorIndex ENDP
+
+; ---------------------------------------------------------------------------
+; DrawGameScreen: draws the title, labels, controls, numbers and the board
+; ---------------------------------------------------------------------------
+DrawGameScreen PROC
+    pushad
+    call ClearScreen
+    GotoRC 0, 0
+    ShowText strGameTitle, 14
+    mov eax, difficulty
+    mov edx, diffNames[eax*4]
+    call WriteString
+    GotoRC 1, 0
+    ShowText lblMines, 11
+    GotoRC 1, 14
+    ShowText lblTime, 11
+    GotoRC 1, 28
+    ShowText lblBest, 11
+    GotoRC 2, 0
+    ShowText strControls, 7
+    call DrawStatus
+    call DrawBoard
+    popad
+    ret
+DrawGameScreen ENDP
+
+; ---------------------------------------------------------------------------
+; DrawStatus: draws mines left, time and best time (numbers only)
+; ---------------------------------------------------------------------------
+DrawStatus PROC
+    pushad
+    GotoRC 1, 7
+    SetColor 15
+    mov eax, mineCount
+    sub eax, flagsPlaced        ; mines left = mines - flags placed
+    call WriteDec
+    mov edx, OFFSET strPad
+    call WriteString
+
+    GotoRC 1, 20
+    SetColor 15
+    mov eax, elapsedSec
+    call WriteDec
+    mov edx, OFFSET strPad
+    call WriteString
+
+    GotoRC 1, 34
+    SetColor 15
+    mov ebx, difficulty
+    mov eax, bestTimes[ebx*4]
+    call WriteBest
+    mov edx, OFFSET strPad
+    call WriteString
+    popad
+    ret
+DrawStatus ENDP
+
+; ---------------------------------------------------------------------------
+; DrawBoard: draws every cell
+; ---------------------------------------------------------------------------
+DrawBoard PROC
+    pushad
+    mov esi, 0
+boardLoop:
+    cmp esi, boardSize
+    jae boardDrawn
+    mov eax, esi
+    call DrawCell
+    inc esi
+    jmp boardLoop
+boardDrawn:
+    popad
+    ret
+DrawBoard ENDP
+
+; ---------------------------------------------------------------------------
+; DrawCell: EAX = cell index. Draws one cell (2 characters wide).
+;   Hidden = #   Flag = F   Number = coloured digit   Blank = space
+;   After a win: mines are shown as flags. On a loss: all mines are shown as *.
+;   Wrong flags remain F. The cell under the cursor gets a yellow background.
+; ---------------------------------------------------------------------------
+DrawCell PROC
+    pushad
+    mov esi, eax                ; ESI = cell index
+
+    ; --- is the cursor on this cell? (EDI = 1 if yes) ---
+    mov edi, 0
+    call GetCursorIndex
+    cmp eax, esi
+    jne notCursorCell
+    mov edi, 1
+notCursorCell:
+
+    ; --- work out the screen position ---
+    mov eax, esi
+    xor edx, edx
+    div boardW                  ; EAX = row, EDX = column
+    add eax, BOARD_Y            ; screen row
+    shl edx, 1                  ; each cell is 2 characters wide
+    add edx, BOARD_X            ; screen column
+    mov dh, al                  ; DH = row, DL = column
+    call Gotoxy
+
+    ; --- choose the character (AL) and colour (BL) ---
+    movzx ecx, BYTE PTR board[esi]      ; CL = cell state bits
+    mov al, '#'
+    mov bl, 7
+    cmp gameOver, 0
+    je normalView
+    cmp gameWon, 0
+    jne checkWonMine            ; winning screen
+    test cl, CELL_MINE
+    jz normalView               ; safe cells keep their normal appearance
+    mov al, '*'
+    mov bl, 12                  ; reveal every mine, even if it was flagged
+    jmp drawIt
+
+checkWonMine:
+    test cl, CELL_MINE
+    jz normalView
+    jmp drawFlag                ; on a win, show mines as flags
+
+normalView:
+    test cl, CELL_FLAG
+    jnz drawFlag
+    test cl, CELL_REVEALED
+    jz drawIt                   ; hidden tile stays '#'
+    movzx edx, BYTE PTR counts[esi]
+    cmp edx, 0
+    je blankCell
+    mov al, dl
+    add al, '0'                 ; digit character
+    mov bl, numColors[edx]
+    jmp drawIt
+blankCell:
+    mov al, ' '
+    jmp drawIt
+drawFlag:
+    mov al, 'F'
+    mov bl, 12
+
+drawIt:
+    cmp edi, 1
+    jne applyColour
+    mov bl, CURSOR_COLOR        ; cursor overrides the colour
+applyColour:
+    mov dl, al                  ; keep the character
+    movzx eax, bl
+    call SetTextColor
+    mov al, dl
+    call WriteChar
+    mov al, ' '
+    call WriteChar
+    SetColor 7                  ; do not leave the highlight colour active
+    popad
+    ret
+DrawCell ENDP
+
+; ---------------------------------------------------------------------------
+; MoveCursor: EAX = row change, EBX = column change (each -1, 0 or +1).
+;             Ignores moves that would leave the board.
+; ---------------------------------------------------------------------------
+MoveCursor PROC
+    pushad
+    add eax, cursorRow
+    js moveDone                 ; went above the board
+    cmp eax, boardH
+    jge moveDone                ; went below the board
+    add ebx, cursorCol
+    js moveDone                 ; went left of the board
+    cmp ebx, boardW
+    jge moveDone                ; went right of the board
+    mov esi, eax                ; ESI = new row
+    mov edi, ebx                ; EDI = new column
+
+    call GetCursorIndex         ; old cursor cell
+    push eax
+    mov cursorRow, esi
+    mov cursorCol, edi
+    pop eax
+    call DrawCell               ; redraw old cell (no longer highlighted)
+    call GetCursorIndex
+    call DrawCell               ; draw new cell (highlighted)
+moveDone:
+    popad
+    ret
+MoveCursor ENDP
+
+; ============================================================================
+;  MODULE 5: SELECTING TILES, 3x3 REVEAL AND CASCADE
+; ============================================================================
 
 ; ---------------------------------------------------------------------------
 ; RevealCell: EAX = cell index. Opens the cell only if it is hidden,
@@ -395,15 +772,6 @@ areaLoop:
     popad
     ret
 RevealArea ENDP
-
-ROHAAN_D4_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  MUHAMMAD ROHAAN - DAY 5  (Cascade, SelectCell)
-; ---------------------------------------------------------------------------
-.data
-passStart       DWORD 0         ; used by Cascade
-.code
 
 ; ---------------------------------------------------------------------------
 ; Cascade: every revealed blank cell (0 mines nearby) opens its neighbours.
@@ -461,9 +829,6 @@ SelectCell PROC
     mov startTime, eax          ; the timer starts now
     call GetCursorIndex
     mov esi, eax
-    test BYTE PTR board[esi], CELL_MINE
-    jz selNotFirst
-    call RelocateMine           ; first pick is never a mine
 
 selNotFirst:
     test BYTE PTR board[esi], CELL_MINE
@@ -475,324 +840,15 @@ selNotFirst:
     jmp selDone
 
 selHitMine:
-    or BYTE PTR board[esi], CELL_REVEALED   ; remember which mine exploded
-    mov gameOver, 1
+    mov gameOver, 1             ; keep the selected mine hidden
 selDone:
     popad
     ret
 SelectCell ENDP
 
-ROHAAN_D5_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  MUHAMMAD ROHAAN - DAY 6  (ChordCell)
-; ---------------------------------------------------------------------------
-
-; ---------------------------------------------------------------------------
-; ChordCell: C key. If the cursor is on an opened number and the flags around
-;            it equal that number, open every other hidden neighbour.
-;            (Wrong flags can make this hit a mine and lose the game.)
-; ---------------------------------------------------------------------------
-ChordCell PROC
-    pushad
-    call GetCursorIndex
-    mov esi, eax
-    test BYTE PTR board[esi], CELL_REVEALED
-    jz chordDone                ; only works on opened tiles
-    movzx ebx, BYTE PTR counts[esi]
-    cmp ebx, 0
-    je chordDone                ; blank tiles have nothing to chord
-
-    mov eax, esi
-    call GetNeighbours
-
-    ; count the flags around the cell (EDX)
-    mov ecx, nbrCount
-    mov edi, 0
-    mov edx, 0
-flagCountLoop:
-    mov eax, nbrList[edi*4]
-    test BYTE PTR board[eax], CELL_FLAG
-    jz noFlagHere
-    inc edx
-noFlagHere:
-    inc edi
-    loop flagCountLoop
-
-    cmp edx, ebx                ; flags must equal the number shown
-    jne chordDone
-
-    ; open every hidden, unflagged neighbour
-    mov ecx, nbrCount
-    mov edi, 0
-chordOpenLoop:
-    mov eax, nbrList[edi*4]
-    test BYTE PTR board[eax], CELL_FLAG OR CELL_REVEALED
-    jnz chordNext
-    test BYTE PTR board[eax], CELL_MINE
-    jz chordSafe
-    or BYTE PTR board[eax], CELL_REVEALED   ; opened a mine: exploded
-    mov gameOver, 1
-    jmp chordNext
-chordSafe:
-    call RevealCell
-chordNext:
-    inc edi
-    loop chordOpenLoop
-
-    cmp gameOver, 0
-    jne chordDone
-    call Cascade
-    call CheckWin
-chordDone:
-    popad
-    ret
-ChordCell ENDP
-
-ROHAAN_D6_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; >>>>>>>>>>>>>>>>>>>>  ROHAAN ZONE END  <<<<<<<<<<<<<<<<<<<<<<
-
-; ----------------------------------------------------------------------------
-; (end of zone - shared base code continues below)
-; ----------------------------------------------------------------------------
-; ----------------------------------------------------------------------------
-
-; ############################################################################
-; #  ZONE 2 OF 3 :  SARIM RAZA ANSARI  -  Main menu / Flags / Win and lose logic
-; #  Only Sarim Raza Ansari writes inside this zone, between the START and END lines.
-; #  Everything outside the three zones is shared base code: do NOT edit it.
-; ############################################################################
-; >>>>>>>>>>>>>>>>>>>>  SARIM ZONE START  <<<<<<<<<<<<<<<<<<<<
-
-; ---------------------------------------------------------------------------
-;  SARIM RAZA ANSARI - DAY 1  (MainMenu)
-; ---------------------------------------------------------------------------
-.data
-strMenuTitle    BYTE "      M I N E S W E E P E R",0
-strMenuLine     BYTE "  ===============================",0
-strMenu1        BYTE "    1. New Game",0
-strMenu2        BYTE "    2. Best Times",0
-strMenu3        BYTE "    3. How to Play",0
-strMenu4        BYTE "    4. Exit",0
-.code
-
-; ---------------------------------------------------------------------------
-; MainMenu: shows the menu and handles the choices 1-4
-; ---------------------------------------------------------------------------
-MainMenu PROC
-menuTop:
-    call ClearScreen
-    GotoRC 2, 0
-    ShowText strMenuLine, 11
-    call Crlf
-    ShowText strMenuTitle, 14
-    call Crlf
-    ShowText strMenuLine, 11
-    call Crlf
-    call Crlf
-    ShowText strMenu1, 10
-    call Crlf
-    ShowText strMenu2, 10
-    call Crlf
-    ShowText strMenu3, 10
-    call Crlf
-    ShowText strMenu4, 12
-    call Crlf
-
-    call ReadChar               ; wait for a key, result in AL
-    cmp al, '1'
-    je chooseNew
-    cmp al, '2'
-    je chooseBest
-    cmp al, '3'
-    je chooseHelp
-    cmp al, '4'
-    je menuExit
-    jmp menuTop
-
-chooseNew:
-    call DifficultyMenu
-    jmp menuTop
-chooseBest:
-    call ShowBestTimes
-    jmp menuTop
-chooseHelp:
-    call ShowHowToPlay
-    jmp menuTop
-menuExit:
-    call ClearScreen
-    ret
-MainMenu ENDP
-
-SARIM_D1_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  SARIM RAZA ANSARI - DAY 2  (DifficultyMenu)
-; ---------------------------------------------------------------------------
-.data
-strChoose       BYTE "  Choose a difficulty:",0
-strOptEasy      BYTE "    1. Easy   (9 x 9,   10 mines)",0
-strOptMedium    BYTE "    2. Medium (16 x 16, 40 mines)",0
-strOptHard      BYTE "    3. Hard   (30 x 16, 99 mines)",0
-strEscBack      BYTE "    Esc. Back",0
-.code
-
-; ---------------------------------------------------------------------------
-; DifficultyMenu: lets the player pick Easy / Medium / Hard, then plays
-; ---------------------------------------------------------------------------
-DifficultyMenu PROC
-    call ClearScreen
-    GotoRC 3, 0
-    ShowText strChoose, 11
-    call Crlf
-    call Crlf
-    ShowText strOptEasy, 10
-    call Crlf
-    ShowText strOptMedium, 14
-    call Crlf
-    ShowText strOptHard, 12
-    call Crlf
-    ShowText strEscBack, 7
-    call Crlf
-
-readDiff:
-    call ReadChar
-    cmp al, '1'
-    je pickEasy
-    cmp al, '2'
-    je pickMedium
-    cmp al, '3'
-    je pickHard
-    cmp al, 27                  ; Esc key
-    je diffBack
-    jmp readDiff
-
-pickEasy:
-    mov difficulty, 0
-    jmp startIt
-pickMedium:
-    mov difficulty, 1
-    jmp startIt
-pickHard:
-    mov difficulty, 2
-startIt:
-    call PlayGame
-diffBack:
-    ret
-DifficultyMenu ENDP
-
-SARIM_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  SARIM RAZA ANSARI - DAY 3  (ShowHowToPlay)
-; ---------------------------------------------------------------------------
-.data
-strHelpTitle    BYTE "HOW TO PLAY",0
-strHelp1        BYTE "  Goal: open every safe tile without selecting a mine.",0
-strHelp2        BYTE "  Enter : select a tile. The tile and the 8 tiles around it",0
-strHelp3        BYTE "          are opened (3x3 area). Mines in that area stay hidden.",0
-strHelp4        BYTE "          You lose only if the tile you select is a mine.",0
-strHelp5        BYTE "  Arrows: move the cursor.",0
-strHelp6        BYTE "  F     : put or remove a flag on a suspected mine.",0
-strHelp7        BYTE "  C     : CHORD. On an opened number with enough flags around",0
-strHelp8        BYTE "          it, opens all the other hidden tiles around it.",0
-strHelp9        BYTE "  Cascade: blank tiles automatically open their neighbours.",0
-strHelp10       BYTE "  Numbers tell how many mines touch that tile.",0
-strHelp11       BYTE "  Your best time for each difficulty is saved in a file.",0
-strHelp12       BYTE "  Esc   : go back to the menu.",0
-.code
-
-; ---------------------------------------------------------------------------
-; ShowHowToPlay: prints the instructions screen
-; ---------------------------------------------------------------------------
-ShowHowToPlay PROC
-    call ClearScreen
-    GotoRC 1, 2
-    ShowText strHelpTitle, 14
-    call Crlf
-    call Crlf
-    ShowText strHelp1, 15
-    call Crlf
-    call Crlf
-    ShowText strHelp2, 11
-    call Crlf
-    ShowText strHelp3, 11
-    call Crlf
-    ShowText strHelp4, 11
-    call Crlf
-    ShowText strHelp5, 15
-    call Crlf
-    ShowText strHelp6, 15
-    call Crlf
-    ShowText strHelp7, 10
-    call Crlf
-    ShowText strHelp8, 10
-    call Crlf
-    ShowText strHelp9, 10
-    call Crlf
-    ShowText strHelp10, 15
-    call Crlf
-    ShowText strHelp11, 15
-    call Crlf
-    ShowText strHelp12, 15
-    call Crlf
-    call Crlf
-    ShowText strAnyKey, 7
-    call ReadChar
-    ret
-ShowHowToPlay ENDP
-
-SARIM_D3_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  SARIM RAZA ANSARI - DAY 4  (ShowBestTimes)
-; ---------------------------------------------------------------------------
-.data
-strBestTitle    BYTE "BEST TIMES",0
-strBestEasy     BYTE "  Easy   : ",0
-strBestMedium   BYTE "  Medium : ",0
-strBestHard     BYTE "  Hard   : ",0
-.code
-
-; ---------------------------------------------------------------------------
-; ShowBestTimes: prints the saved best time of each difficulty
-; ---------------------------------------------------------------------------
-ShowBestTimes PROC
-    call ClearScreen
-    GotoRC 2, 2
-    ShowText strBestTitle, 14
-    call Crlf
-    call Crlf
-    ShowText strBestEasy, 10
-    mov eax, bestTimes[0]
-    call WriteBest
-    call Crlf
-    ShowText strBestMedium, 14
-    mov eax, bestTimes[4]
-    call WriteBest
-    call Crlf
-    ShowText strBestHard, 12
-    mov eax, bestTimes[8]
-    call WriteBest
-    call Crlf
-    call Crlf
-    ShowText strAnyKey, 7
-    call ReadChar
-    ret
-ShowBestTimes ENDP
-
-SARIM_D4_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  SARIM RAZA ANSARI - DAY 5  (ToggleFlag, ShowEndMessage)
-; ---------------------------------------------------------------------------
-.data
-strWin          BYTE "YOU WIN!  Time: ",0
-strLose         BYTE "GAME OVER!  You selected a mine.",0
-strRecord       BYTE "   NEW BEST TIME!",0
-strReturn       BYTE "Press Enter or Esc to return to the menu.",0
-.code
+; ============================================================================
+;  MODULE 6: FLAGS, MINE COUNTER AND TIMER
+; ============================================================================
 
 ; ---------------------------------------------------------------------------
 ; ToggleFlag: F key. Puts or removes a flag on the hidden cell under the cursor
@@ -824,35 +880,31 @@ flagDone:
 ToggleFlag ENDP
 
 ; ---------------------------------------------------------------------------
-; ShowEndMessage: prints the win or lose message under the controls line
+; UpdateTimer: recalculates elapsed seconds and redraws if the second changed
 ; ---------------------------------------------------------------------------
-ShowEndMessage PROC
+UpdateTimer PROC
     pushad
-    GotoRC 3, 0
-    cmp gameWon, 0
-    jne showWin
-    ShowText strLose, 12
-    jmp showPrompt
-showWin:
-    ShowText strWin, 10
-    mov eax, elapsedSec
-    call WriteDec
-    ShowText strSecUnit, 10
-    cmp newRecord, 0
-    je showPrompt
-    ShowText strRecord, 14
-showPrompt:
-    GotoRC 4, 0
-    ShowText strReturn, 7
+    cmp timerRunning, 0
+    je timerDone
+    cmp gameOver, 0
+    jne timerDone
+    call GetMseconds            ; milliseconds since midnight
+    sub eax, startTime
+    xor edx, edx
+    mov ecx, 1000
+    div ecx                     ; EAX = whole seconds
+    cmp eax, elapsedSec
+    je timerDone                ; same second, nothing to redraw
+    mov elapsedSec, eax
+    call DrawStatus
+timerDone:
     popad
     ret
-ShowEndMessage ENDP
+UpdateTimer ENDP
 
-SARIM_D5_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  SARIM RAZA ANSARI - DAY 6  (CheckWin)
-; ---------------------------------------------------------------------------
+; ============================================================================
+;  MODULE 7: WIN AND LOSE LOGIC
+; ============================================================================
 
 ; ---------------------------------------------------------------------------
 ; CheckWin: the player wins when all safe tiles are open.
@@ -898,310 +950,49 @@ winDone:
     ret
 CheckWin ENDP
 
-SARIM_D6_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; >>>>>>>>>>>>>>>>>>>>  SARIM ZONE END  <<<<<<<<<<<<<<<<<<<<<<
-
-; ----------------------------------------------------------------------------
-; (end of zone - shared base code continues below)
-; ----------------------------------------------------------------------------
-; ----------------------------------------------------------------------------
-
-; ############################################################################
-; #  ZONE 3 OF 3 :  RANA MUHAMMAD HUSSAIN  -  Display and cursor / Counter and timer / Best-time file
-; #  Only Rana Muhammad Hussain writes inside this zone, between the START and END lines.
-; #  Everything outside the three zones is shared base code: do NOT edit it.
-; ############################################################################
-; >>>>>>>>>>>>>>>>>>>>  RANA ZONE START  <<<<<<<<<<<<<<<<<<<<
-
 ; ---------------------------------------------------------------------------
-;  RANA MUHAMMAD HUSSAIN - DAY 1  (GetCursorIndex, DrawCell)
+; ShowEndMessage: prints the win or lose message under the controls line
 ; ---------------------------------------------------------------------------
-.data
-numColors       BYTE 7, 9, 2, 12, 1, 4, 3, 15, 8      ; colours for digits 0..8
-.code
-
-; ---------------------------------------------------------------------------
-; GetCursorIndex: returns EAX = cursorRow * boardW + cursorCol
-; ---------------------------------------------------------------------------
-GetCursorIndex PROC
-    mov eax, cursorRow
-    imul eax, boardW
-    add eax, cursorCol
-    ret
-GetCursorIndex ENDP
-
-; ---------------------------------------------------------------------------
-; DrawCell: EAX = cell index. Draws one cell (2 characters wide).
-;   Hidden = #   Flag = F   Number = coloured digit   Blank = space
-;   After the game: mines = *   exploded mine = red *   wrong flag = X
-;   The cell under the cursor gets a yellow background.
-; ---------------------------------------------------------------------------
-DrawCell PROC
+ShowEndMessage PROC
     pushad
-    mov esi, eax                ; ESI = cell index
-
-    ; --- is the cursor on this cell? (EDI = 1 if yes) ---
-    mov edi, 0
-    call GetCursorIndex
-    cmp eax, esi
-    jne notCursorCell
-    mov edi, 1
-notCursorCell:
-
-    ; --- work out the screen position ---
-    mov eax, esi
-    xor edx, edx
-    div boardW                  ; EAX = row, EDX = column
-    add eax, BOARD_Y            ; screen row
-    shl edx, 1                  ; each cell is 2 characters wide
-    add edx, BOARD_X            ; screen column
-    mov dh, al                  ; DH = row, DL = column
-    call Gotoxy
-
-    ; --- choose the character (AL) and colour (BL) ---
-    movzx ecx, BYTE PTR board[esi]      ; CL = cell state bits
-    mov al, '#'
-    mov bl, 7
-    cmp gameOver, 0
-    je normalView
-
-    ; game is over: show the mines
-    test cl, CELL_MINE
-    jz wrongFlagCheck
-    test cl, CELL_FLAG
-    jnz drawFlag                ; correctly flagged mine
+    GotoRC 3, 0
     cmp gameWon, 0
-    jne drawFlag                ; on a win, show all mines as flags
-    test cl, CELL_REVEALED
-    jnz exploded                ; the mine that was selected
-    mov al, '*'
-    mov bl, 12
-    jmp drawIt
-exploded:
-    mov al, '*'
-    mov bl, EXPLODE_COLOR
-    jmp drawIt
-wrongFlagCheck:
-    test cl, CELL_FLAG
-    jz normalView
-    mov al, 'X'                 ; flag on a safe tile
-    mov bl, 14
-    jmp drawIt
-
-normalView:
-    test cl, CELL_FLAG
-    jnz drawFlag
-    test cl, CELL_REVEALED
-    jz drawIt                   ; hidden tile stays '#'
-    movzx edx, BYTE PTR counts[esi]
-    cmp edx, 0
-    je blankCell
-    mov al, dl
-    add al, '0'                 ; digit character
-    mov bl, numColors[edx]
-    jmp drawIt
-blankCell:
-    mov al, ' '
-    jmp drawIt
-drawFlag:
-    mov al, 'F'
-    mov bl, 12
-
-drawIt:
-    cmp edi, 1
-    jne applyColour
-    mov bl, CURSOR_COLOR        ; cursor overrides the colour
-applyColour:
-    mov dl, al                  ; keep the character
-    movzx eax, bl
-    call SetTextColor
-    mov al, dl
-    call WriteChar
-    mov al, ' '
-    call WriteChar
-    SetColor 7                  ; do not leave the highlight colour active
-    popad
-    ret
-DrawCell ENDP
-
-RANA_D1_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  RANA MUHAMMAD HUSSAIN - DAY 2  (DrawBoard, MoveCursor)
-; ---------------------------------------------------------------------------
-
-; ---------------------------------------------------------------------------
-; DrawBoard: draws every cell
-; ---------------------------------------------------------------------------
-DrawBoard PROC
-    pushad
-    mov esi, 0
-boardLoop:
-    cmp esi, boardSize
-    jae boardDrawn
-    mov eax, esi
-    call DrawCell
-    inc esi
-    jmp boardLoop
-boardDrawn:
-    popad
-    ret
-DrawBoard ENDP
-
-; ---------------------------------------------------------------------------
-; MoveCursor: EAX = row change, EBX = column change (each -1, 0 or +1).
-;             Ignores moves that would leave the board.
-; ---------------------------------------------------------------------------
-MoveCursor PROC
-    pushad
-    add eax, cursorRow
-    js moveDone                 ; went above the board
-    cmp eax, boardH
-    jge moveDone                ; went below the board
-    add ebx, cursorCol
-    js moveDone                 ; went left of the board
-    cmp ebx, boardW
-    jge moveDone                ; went right of the board
-    mov esi, eax                ; ESI = new row
-    mov edi, ebx                ; EDI = new column
-
-    call GetCursorIndex         ; old cursor cell
-    push eax
-    mov cursorRow, esi
-    mov cursorCol, edi
-    pop eax
-    call DrawCell               ; redraw old cell (no longer highlighted)
-    call GetCursorIndex
-    call DrawCell               ; draw new cell (highlighted)
-moveDone:
-    popad
-    ret
-MoveCursor ENDP
-
-RANA_D2_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  RANA MUHAMMAD HUSSAIN - DAY 3  (DrawStatus, WriteBest)
-; ---------------------------------------------------------------------------
-
-; ---------------------------------------------------------------------------
-; DrawStatus: draws mines left, time and best time (numbers only)
-; ---------------------------------------------------------------------------
-DrawStatus PROC
-    pushad
-    GotoRC 1, 7
-    SetColor 15
-    mov eax, mineCount
-    sub eax, flagsPlaced        ; mines left = mines - flags placed
-    call WriteDec
-    mov edx, OFFSET strPad
-    call WriteString
-
-    GotoRC 1, 20
-    SetColor 15
+    jne showWin
+    ShowText strLose, 12
+    jmp showPrompt
+showWin:
+    ShowText strWin, 10
     mov eax, elapsedSec
     call WriteDec
-    mov edx, OFFSET strPad
-    call WriteString
-
-    GotoRC 1, 34
-    SetColor 15
-    mov ebx, difficulty
-    mov eax, bestTimes[ebx*4]
-    call WriteBest
-    mov edx, OFFSET strPad
-    call WriteString
+    ShowText strSecUnit, 10
+    cmp newRecord, 0
+    je showPrompt
+    ShowText strRecord, 14
+showPrompt:
+    GotoRC 4, 0
+    ShowText strReturn, 7
     popad
     ret
-DrawStatus ENDP
+ShowEndMessage ENDP
 
 ; ---------------------------------------------------------------------------
-; WriteBest: prints the time in EAX as "N s", or "--" if EAX is 0
+; RefreshScreen: redraws board and numbers, and shows the end message if done
 ; ---------------------------------------------------------------------------
-WriteBest PROC
-    cmp eax, 0
-    jne hasRecord
-    mov edx, OFFSET strNone
-    call WriteString
-    ret
-hasRecord:
-    call WriteDec
-    mov edx, OFFSET strSecUnit
-    call WriteString
-    ret
-WriteBest ENDP
-
-RANA_D3_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  RANA MUHAMMAD HUSSAIN - DAY 4  (UpdateTimer, DrawGameScreen)
-; ---------------------------------------------------------------------------
-.data
-strGameTitle    BYTE "MINESWEEPER - ",0
-lblMines        BYTE "Mines:",0
-lblTime         BYTE "Time:",0
-lblBest         BYTE "Best:",0
-strControls     BYTE "Arrows:Move  Enter:Open  F:Flag  C:Chord  Esc:Menu",0
-.code
-
-; ---------------------------------------------------------------------------
-; UpdateTimer: recalculates elapsed seconds and redraws if the second changed
-; ---------------------------------------------------------------------------
-UpdateTimer PROC
+RefreshScreen PROC
     pushad
-    cmp timerRunning, 0
-    je timerDone
-    cmp gameOver, 0
-    jne timerDone
-    call GetMseconds            ; milliseconds since midnight
-    sub eax, startTime
-    xor edx, edx
-    mov ecx, 1000
-    div ecx                     ; EAX = whole seconds
-    cmp eax, elapsedSec
-    je timerDone                ; same second, nothing to redraw
-    mov elapsedSec, eax
-    call DrawStatus
-timerDone:
-    popad
-    ret
-UpdateTimer ENDP
-
-; ---------------------------------------------------------------------------
-; DrawGameScreen: draws the title, labels, controls, numbers and the board
-; ---------------------------------------------------------------------------
-DrawGameScreen PROC
-    pushad
-    call ClearScreen
-    GotoRC 0, 0
-    ShowText strGameTitle, 14
-    mov eax, difficulty
-    mov edx, diffNames[eax*4]
-    call WriteString
-    GotoRC 1, 0
-    ShowText lblMines, 11
-    GotoRC 1, 14
-    ShowText lblTime, 11
-    GotoRC 1, 28
-    ShowText lblBest, 11
-    GotoRC 2, 0
-    ShowText strControls, 7
-    call DrawStatus
     call DrawBoard
+    call DrawStatus
+    cmp gameOver, 0
+    je refreshDone
+    call ShowEndMessage
+refreshDone:
     popad
     ret
-DrawGameScreen ENDP
+RefreshScreen ENDP
 
-RANA_D4_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  RANA MUHAMMAD HUSSAIN - DAY 5  (LoadBestTimes, SaveBestTimes)
-; ---------------------------------------------------------------------------
-.data
-fileName        BYTE "besttime.dat",0
-fileHandle      DWORD 0
-.code
+; ============================================================================
+;  MODULE 8: BEST-TIME FILE
+; ============================================================================
 
 ; ---------------------------------------------------------------------------
 ; LoadBestTimes: reads the 3 saved times from the file (if it exists)
@@ -1243,213 +1034,8 @@ saveDone:
     ret
 SaveBestTimes ENDP
 
-RANA_D5_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; ---------------------------------------------------------------------------
-;  RANA MUHAMMAD HUSSAIN - DAY 6  (RefreshScreen)
-; ---------------------------------------------------------------------------
-
-; ---------------------------------------------------------------------------
-; RefreshScreen: redraws board and numbers, and shows the end message if done
-; ---------------------------------------------------------------------------
-RefreshScreen PROC
-    pushad
-    call DrawBoard
-    call DrawStatus
-    cmp gameOver, 0
-    je refreshDone
-    call ShowEndMessage
-refreshDone:
-    popad
-    ret
-RefreshScreen ENDP
-
-RANA_D6_DONE = 1      ; this day's code exists, so its stubs are skipped
-
-; >>>>>>>>>>>>>>>>>>>>  RANA ZONE END  <<<<<<<<<<<<<<<<<<<<<<
-
-; ----------------------------------------------------------------------------
-; (end of zone - shared base code continues below)
-; ----------------------------------------------------------------------------
-; ----------------------------------------------------------------------------
-
 ; ============================================================================
-;  STUBS  -  placeholder procedures for code that has not been written yet
-;  A stub is assembled ONLY while its day's flag is still 0. Once a member's
-;  day file sets its flag to 1, the stub disappears and the real code is used.
-;  (Nobody edits this section.)
-; ============================================================================
-
-IF ROHAAN_D1_DONE EQ 0
-SetDifficulty PROC
-    ret
-SetDifficulty ENDP
-InitGame PROC
-    ret
-InitGame ENDP
-ENDIF
-
-IF ROHAAN_D2_DONE EQ 0
-PlaceMines PROC
-    ret
-PlaceMines ENDP
-RelocateMine PROC
-    ret
-RelocateMine ENDP
-ENDIF
-
-IF ROHAAN_D3_DONE EQ 0
-GetNeighbours PROC
-    ret
-GetNeighbours ENDP
-CalcCounts PROC
-    ret
-CalcCounts ENDP
-ENDIF
-
-IF ROHAAN_D4_DONE EQ 0
-RevealCell PROC
-    ret
-RevealCell ENDP
-RevealArea PROC
-    ret
-RevealArea ENDP
-ENDIF
-
-IF ROHAAN_D5_DONE EQ 0
-Cascade PROC
-    ret
-Cascade ENDP
-SelectCell PROC
-    ret
-SelectCell ENDP
-ENDIF
-
-IF ROHAAN_D6_DONE EQ 0
-ChordCell PROC
-    ret
-ChordCell ENDP
-ENDIF
-
-IF SARIM_D1_DONE EQ 0
-MainMenu PROC
-    ; temporary: start an Easy game directly until the real menu exists
-    mov difficulty, 0
-    call PlayGame
-    ret
-MainMenu ENDP
-ENDIF
-
-IF SARIM_D2_DONE EQ 0
-DifficultyMenu PROC
-    ret
-DifficultyMenu ENDP
-ENDIF
-
-IF SARIM_D3_DONE EQ 0
-ShowHowToPlay PROC
-    ret
-ShowHowToPlay ENDP
-ENDIF
-
-IF SARIM_D4_DONE EQ 0
-ShowBestTimes PROC
-    ret
-ShowBestTimes ENDP
-ENDIF
-
-IF SARIM_D5_DONE EQ 0
-ToggleFlag PROC
-    ret
-ToggleFlag ENDP
-ShowEndMessage PROC
-    ret
-ShowEndMessage ENDP
-ENDIF
-
-IF SARIM_D6_DONE EQ 0
-CheckWin PROC
-    ret
-CheckWin ENDP
-ENDIF
-
-IF RANA_D1_DONE EQ 0
-GetCursorIndex PROC
-    ret
-GetCursorIndex ENDP
-DrawCell PROC
-    ret
-DrawCell ENDP
-ENDIF
-
-IF RANA_D2_DONE EQ 0
-DrawBoard PROC
-    ret
-DrawBoard ENDP
-MoveCursor PROC
-    ret
-MoveCursor ENDP
-ENDIF
-
-IF RANA_D3_DONE EQ 0
-DrawStatus PROC
-    ret
-DrawStatus ENDP
-WriteBest PROC
-    ret
-WriteBest ENDP
-ENDIF
-
-IF RANA_D4_DONE EQ 0
-UpdateTimer PROC
-    ret
-UpdateTimer ENDP
-DrawGameScreen PROC
-    ret
-DrawGameScreen ENDP
-ENDIF
-
-IF RANA_D5_DONE EQ 0
-LoadBestTimes PROC
-    ret
-LoadBestTimes ENDP
-SaveBestTimes PROC
-    ret
-SaveBestTimes ENDP
-ENDIF
-
-IF RANA_D6_DONE EQ 0
-RefreshScreen PROC
-    ret
-RefreshScreen ENDP
-ENDIF
-
-
-; ============================================================================
-;  MAIN PROGRAM
-; ============================================================================
-main PROC
-    call Randomize              ; seed the random number generator
-    call LoadBestTimes          ; read saved best times (if file exists)
-    call MainMenu               ; run the menu until the player exits
-    exit
-main ENDP
-
-; ============================================================================
-;  UTILITY
-; ============================================================================
-
-; ---------------------------------------------------------------------------
-; ClearScreen: resets colour to normal, then clears the console
-; ---------------------------------------------------------------------------
-ClearScreen PROC
-    SetColor 7
-    call Clrscr
-    ret
-ClearScreen ENDP
-
-; ============================================================================
-;  GAME LOOP (connects all the modules together)
+;  GAME LOOP
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -1510,14 +1096,8 @@ notRight:
     jmp gameLoop
 notEnter:
     cmp dx, KEY_F
-    jne notFlagKey
-    call ToggleFlag
-    jmp gameLoop
-notFlagKey:
-    cmp dx, KEY_C
     jne gameLoop
-    call ChordCell
-    call RefreshScreen
+    call ToggleFlag
     jmp gameLoop
 
 leaveGame:
