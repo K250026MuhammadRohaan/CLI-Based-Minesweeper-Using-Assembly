@@ -111,7 +111,9 @@ nbrCount        DWORD 0
 nbrList         DWORD 8 DUP(0)
 
 ; ----- Number colours for 0..8 -----
-numColors       BYTE 7, 9, 2, 12, 1, 4, 3, 15, 8
+;   0 = unused, 1 = light green, 2 = light yellow, 3 = dark yellow,
+;   4 = light red, 5 = blue, 6 = blue, 7 = magenta, 8 = magenta
+numColors       BYTE 7, 10, 14, 12, 9, 1, 1, 5, 5
 
 ; ----- Best-time file -----
 fileName        BYTE "besttime.dat",0
@@ -333,15 +335,21 @@ ShowHowToPlay PROC
     call Crlf
     ShowText strHelp4, 11
     call Crlf
+    call Crlf
     ShowText strHelp5, 15
+    call Crlf
     call Crlf
     ShowText strHelp6, 15
     call Crlf
+    call Crlf
     ShowText strHelp9, 10
+    call Crlf
     call Crlf
     ShowText strHelp10, 15
     call Crlf
+    call Crlf
     ShowText strHelp11, 15
+    call Crlf
     call Crlf
     ShowText strHelp12, 15
     call Crlf
@@ -684,7 +692,7 @@ blankCell:
     jmp drawIt
 drawFlag:
     mov al, 'F'
-    mov bl, 12
+    mov bl, 13                  ; flag colour: light magenta (purple/pink)
 
 drawIt:
     cmp edi, 1
